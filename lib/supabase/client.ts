@@ -1,4 +1,17 @@
-// Placeholder for future Supabase client setup.
-// Plan: import { createClient } from "@supabase/supabase-js" and export a singleton.
-// For now, we keep this file so imports remain stable when the backend is swapped in.
-export const supabaseClient = null;
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.warn("Supabase client missing env: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+}
+
+export const supabaseClient = supabaseUrl && supabaseKey
+  ? createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })
+  : null;
