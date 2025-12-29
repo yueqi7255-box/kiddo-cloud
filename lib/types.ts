@@ -5,6 +5,12 @@ export type Photo = {
   takenAt?: string;
   tags?: string[];
   isLive?: boolean;
+  format?: string;
+  sizeMB?: number;
+  location?: string;
+  device?: string;
+  storagePath?: string;
+  livePlaybackUrl?: string;
 };
 
 export type ApiHealth = {

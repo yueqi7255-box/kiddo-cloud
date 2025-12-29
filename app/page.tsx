@@ -3,7 +3,7 @@ import { LayoutShell } from "@/components/layout-shell";
 
 export default function Home() {
   return (
-    <LayoutShell>
+    <LayoutShell hideSidebar>
       <div className="flex flex-col gap-12">
         <header className="flex flex-col gap-3">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-500">
@@ -22,18 +22,6 @@ export default function Home() {
               className="rounded-full bg-zinc-900 px-5 py-2 text-white transition hover:bg-zinc-800"
             >
               去登录（模拟）
-            </Link>
-            <Link
-              href="/upload"
-              className="rounded-full border border-zinc-300 px-5 py-2 text-zinc-800 transition hover:border-zinc-400 hover:bg-white"
-            >
-              上传照片
-            </Link>
-            <Link
-              href="/albums"
-              className="rounded-full border border-zinc-300 px-5 py-2 text-zinc-800 transition hover:border-zinc-400 hover:bg-white"
-            >
-              我的相册
             </Link>
           </div>
         </header>

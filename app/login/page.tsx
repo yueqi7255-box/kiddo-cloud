@@ -13,11 +13,12 @@ export default function LoginPage() {
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setStatus("success");
-    setTimeout(() => router.push("/upload"), 300);
+    localStorage.setItem("kc_logged_in", "true");
+    setTimeout(() => router.push("/memory-wall"), 300);
   }
 
   return (
-    <LayoutShell>
+    <LayoutShell hideSidebar>
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-500">
@@ -66,7 +67,7 @@ export default function LoginPage() {
             </button>
             {status === "success" && (
               <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-                登录成功（模拟），即将跳转到上传页
+                登录成功（模拟），即将跳转到 Memory Wall
               </div>
             )}
           </div>

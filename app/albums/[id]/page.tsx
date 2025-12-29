@@ -1,20 +1,10 @@
 "use client";
 
-import { use, useState, useEffect, useMemo, useRef } from "react";
-import { notFound } from "next/navigation";
+import { use, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { LayoutShell } from "@/components/layout-shell";
+import { MediaPreviewer, type MediaItem } from "@/components/media-previewer";
 import { listPhotos } from "@/lib/photos";
-
-type MediaItem =
-  | {
-      id: string;
-      type: "photo";
-      title: string;
-      url: string;
-      takenAt?: string;
-      isLive?: boolean;
-    }
-  | { id: string; type: "video"; title: string; url: string; takenAt?: string };
 
 const mockVideos: MediaItem[] = [
   {
@@ -23,6 +13,54 @@ const mockVideos: MediaItem[] = [
     title: "Play time",
     url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     takenAt: "2023-09-01",
+    format: "mp4",
+    sizeMB: 12.5,
+    device: "iPhone 14",
+    storagePath: "default/v1.mp4",
+  },
+  {
+    id: "v2",
+    type: "video",
+    title: "Snow fight",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    takenAt: "2023-12-22",
+    format: "mp4",
+    sizeMB: 18.2,
+    device: "Pixel 8",
+    storagePath: "default/v2.mp4",
+  },
+  {
+    id: "v3",
+    type: "video",
+    title: "Bike ride",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    takenAt: "2024-04-10",
+    format: "mp4",
+    sizeMB: 15.0,
+    device: "GoPro 11",
+    storagePath: "default/v3.mp4",
+  },
+  {
+    id: "v4",
+    type: "video",
+    title: "School play",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    takenAt: "2024-05-30",
+    format: "mp4",
+    sizeMB: 22.1,
+    device: "iPhone 15",
+    storagePath: "default/v4.mp4",
+  },
+  {
+    id: "v5",
+    type: "video",
+    title: "Pool fun",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    takenAt: "2024-07-12",
+    format: "mp4",
+    sizeMB: 10.8,
+    device: "Pixel 7",
+    storagePath: "default/v5.mp4",
   },
 ];
 
@@ -49,28 +87,24 @@ export default function AlbumDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "photo" | "video">("all");
   const [zoom, setZoom] = useState(1); // 1.0 = 默认缩放
   const [selectedIndex, setSelectedIndex] = useState<number | null>(0);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
-  const [previewZoom, setPreviewZoom] = useState(1);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-  const scrollStartRef = useRef<{ x: number; y: number } | null>(null);
-  const previewContainerRef = useRef<HTMLDivElement | null>(null);
-  const previewImageRef = useRef<HTMLImageElement | null>(null);
-  const [baseSize, setBaseSize] = useState<{ w: number; h: number }>({
-    w: 0,
-    h: 0,
-  });
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [infoItem, setInfoItem] = useState<MediaItem | null>(null);
+  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [memberInput, setMemberInput] = useState("");
+  const [inviteLinkOn, setInviteLinkOn] = useState(true);
+  const [members, setMembers] = useState<
+    { id: string; contact: string; status: "pending" | "viewer" | "uploader" | "removed" }[]
+  >([
+    { id: "m1", contact: "mom@example.com", status: "viewer" },
+    { id: "m2", contact: "dad@example.com", status: "uploader" },
+  ]);
 
-  if (id !== "default") {
-    notFound();
-  }
-
-  const media = buildMedia().filter((item) =>
-    filter === "all" ? true : item.type === filter
-  );
+  const albumTitle = searchParams.get("title") || (id === "default" ? "默认相册" : "我的相册");
 
   function clampZoom(next: number) {
     return Math.min(1.6, Math.max(0.7, next));
@@ -87,57 +121,6 @@ export default function AlbumDetail({
     handleZoom(e.deltaY > 0 ? -step : step);
   }
 
-  // 预览层缩放：仅对照片生效
-  function clampPreviewZoom(next: number) {
-    // 放宽范围，尽量不限制；仅做安全防护
-    return Math.min(10, Math.max(0.1, next));
-  }
-
-  function handlePreviewZoom(delta: number) {
-    setPreviewZoom((z) => clampPreviewZoom(z + delta));
-  }
-
-  function handlePreviewWheel(e: React.WheelEvent<HTMLDivElement>) {
-    if (!e.ctrlKey && !e.metaKey) return;
-    const step = 0.1;
-    handlePreviewZoom(e.deltaY > 0 ? -step : step);
-  }
-
-  function handlePreviewPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    if (filtered[previewIndex ?? -1]?.type !== "photo") return;
-    if (previewZoom <= 1) return;
-    e.preventDefault();
-    const container = previewContainerRef.current;
-    if (!container) return;
-    container.setPointerCapture(e.pointerId);
-    setIsDragging(true);
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
-    scrollStartRef.current = {
-      x: container.scrollLeft,
-      y: container.scrollTop,
-    };
-  }
-
-  function handlePreviewPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!isDragging) return;
-    const container = previewContainerRef.current;
-    if (!container || !dragStartRef.current || !scrollStartRef.current) return;
-    const dx = e.clientX - dragStartRef.current.x;
-    const dy = e.clientY - dragStartRef.current.y;
-    container.scrollTo({
-      left: scrollStartRef.current.x - dx,
-      top: scrollStartRef.current.y - dy,
-      behavior: "auto",
-    });
-  }
-
-  function handlePreviewPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
-    setIsDragging(false);
-    dragStartRef.current = null;
-    scrollStartRef.current = null;
-  }
-
   const thumbBase = 220;
   const thumbWidth = Math.round(thumbBase * zoom);
   const gap = Math.round(thumbWidth * 0.05); // 行列间距为占位高度的 5%
@@ -149,7 +132,6 @@ export default function AlbumDetail({
       ),
     [filter]
   );
-  const currentMedia = previewIndex !== null ? filtered[previewIndex] : null;
 
   // 保证选中索引合法
   useEffect(() => {
@@ -165,44 +147,17 @@ export default function AlbumDetail({
 
   function openPreview(idx: number) {
     setPreviewIndex(idx);
-    setPreviewZoom(1);
-    dragStartRef.current = null;
-    scrollStartRef.current = null;
-    setBaseSize({ w: 0, h: 0 });
+    setIsPreviewOpen(true);
   }
 
   function closePreview() {
+    setIsPreviewOpen(false);
     setPreviewIndex(null);
-    setPreviewZoom(1);
-    dragStartRef.current = null;
-    scrollStartRef.current = null;
-    setBaseSize({ w: 0, h: 0 });
-  }
-
-  function stepPreview(delta: number) {
-    if (previewIndex === null) return;
-    const next = (previewIndex + delta + filtered.length) % filtered.length;
-    setPreviewIndex(next);
-    setPreviewZoom(1);
-    dragStartRef.current = null;
-    scrollStartRef.current = null;
-    setBaseSize({ w: 0, h: 0 });
   }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (previewIndex !== null) {
-        if (e.key === "Escape") {
-          closePreview();
-        } else if (e.key === "ArrowRight") {
-          stepPreview(1);
-        } else if (e.key === "ArrowLeft") {
-          stepPreview(-1);
-        }
-        return;
-      }
-
-      // 列表态下快捷键
+      if (isPreviewOpen) return;
       if (e.key === " " && selectedIndex !== null) {
         e.preventDefault();
         openPreview(selectedIndex);
@@ -220,33 +175,26 @@ export default function AlbumDetail({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [previewIndex, filtered.length, selectedIndex]);
-
-  useEffect(() => {
-    if (!previewImageRef.current || !previewContainerRef.current) return;
-    if (previewZoom !== 1) return;
-    const imgEl = previewImageRef.current;
-    // 等待图片渲染完成，读取当前适配后的尺寸作为基准
-    const rect = imgEl.getBoundingClientRect();
-    if (rect.width && rect.height) {
-      setBaseSize({ w: rect.width, h: rect.height });
-    }
-  }, [previewZoom, previewIndex, currentMedia]);
+  }, [isPreviewOpen, filtered.length, selectedIndex]);
 
   return (
     <LayoutShell>
-      <div className="flex flex-col gap-8">
-        <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex h-full flex-col gap-6">
+        <header className="sticky top-0 z-10 flex flex-col gap-3 border-b border-zinc-200 bg-white/95 pb-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-500">
-              默认相册
+              {albumTitle}
             </p>
             <h1 className="text-3xl font-semibold">家庭照片与视频</h1>
-            <p className="text-sm text-zinc-600">
-              上传内容自动归档到默认相册。右侧可筛选照片或视频，默认展示全部。
-            </p>
+            <p className="text-sm text-zinc-600">右侧可筛选照片或视频，默认展示全部。</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setShowMemberModal(true)}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 shadow-sm hover:bg-zinc-100"
+            >
+              添加成员
+            </button>
             <div className="flex items-center gap-2">
               <label className="text-sm font-medium text-zinc-700">筛选：</label>
               <div className="flex rounded-lg border border-zinc-200 bg-white p-1 shadow-sm">
@@ -296,173 +244,211 @@ export default function AlbumDetail({
           }}
           onWheel={handleWheel}
         >
-          {filtered.map((item, idx) =>
-            item.type === "photo" ? (
-              <figure
-                key={item.id}
-                className={`group overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm ${
-                  selectedIndex === idx ? "ring-2 ring-blue-500" : ""
-                }`}
-                onClick={() => setSelectedIndex(idx)}
-                onDoubleClick={() => openPreview(idx)}
-              >
-                <div className="relative w-full">
+          {filtered.map((item, idx) => (
+            <figure
+              key={item.id}
+              className={`group overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm ${
+                selectedIndex === idx ? "ring-2 ring-blue-500" : ""
+              }`}
+              onClick={() => setSelectedIndex(idx)}
+              onDoubleClick={() => openPreview(idx)}
+            >
+              <div className="relative w-full">
+                {item.type === "photo" ? (
                   <img
                     src={item.url}
                     alt={item.title}
                     className="w-full aspect-[4/3] object-cover"
                   />
-                  {item.isLive && (
-                    <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
-                      Live
-                    </span>
-                  )}
-                </div>
-                <figcaption className="px-4 py-3 text-sm">
-                  <p className="font-semibold text-zinc-900">{item.title}</p>
-                  <p className="text-xs text-zinc-500">{item.takenAt ?? "未知日期"}</p>
-                </figcaption>
-              </figure>
-            ) : (
-              <figure
-                key={item.id}
-                className={`group overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm ${
-                  selectedIndex === idx ? "ring-2 ring-blue-500" : ""
-                }`}
-                onClick={() => setSelectedIndex(idx)}
-                onDoubleClick={() => openPreview(idx)}
-              >
-                <div className="relative w-full">
-                  <video controls className="w-full aspect-[4/3] object-cover">
+                ) : (
+                  <video muted playsInline className="w-full aspect-[4/3] object-cover">
                     <source src={item.url} />
                     您的浏览器不支持视频播放。
                   </video>
-                </div>
-                <figcaption className="px-4 py-3 text-sm">
-                  <p className="font-semibold text-zinc-900">{item.title}</p>
-                  <p className="text-xs text-zinc-500">{item.takenAt ?? "未知日期"}</p>
-                </figcaption>
-              </figure>
-            )
-          )}
+                )}
+                {item.isLive && (
+                  <span className="absolute left-2 bottom-2 rounded-full bg-black/75 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                    Live
+                  </span>
+                )}
+                {item.type === "video" && (
+                  <span className="absolute left-2 bottom-2 rounded-full bg-black/75 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
+                    视频
+                  </span>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setInfoItem(item);
+                  }}
+                  className="absolute right-2 bottom-2 hidden rounded-full bg-black/70 px-2 py-1 text-xs font-semibold text-white shadow-sm transition group-hover:flex"
+                  aria-label="更多信息"
+                >
+                  ⋯
+                </button>
+              </div>
+            </figure>
+          ))}
         </section>
 
-        {previewIndex !== null && (
+        <MediaPreviewer
+          items={filtered}
+          open={isPreviewOpen && previewIndex !== null}
+          index={previewIndex}
+          onClose={closePreview}
+          onIndexChange={setPreviewIndex}
+        />
+
+        {infoItem && (
           <div
-            className="fixed inset-0 z-50 flex h-screen w-screen items-center justify-center bg-black/80 px-2 sm:px-4"
-            onClick={closePreview}
-            onWheel={handlePreviewWheel}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setInfoItem(null)}
           >
             <div
-              className="relative flex h-full w-full items-center justify-center"
+              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <button
-                onClick={() => stepPreview(-1)}
-                className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/80 px-3 py-2 text-lg font-bold text-zinc-800 shadow hover:bg-white"
-                aria-label="上一张"
-              >
-                ←
-              </button>
-              <button
-                onClick={() => stepPreview(1)}
-                className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/80 px-3 py-2 text-lg font-bold text-zinc-800 shadow hover:bg-white"
-                aria-label="下一张"
-              >
-                →
-              </button>
-              <button
-                onClick={closePreview}
-                className="absolute right-2 top-2 z-10 rounded-full bg-white/80 px-3 py-1 text-sm font-semibold text-zinc-800 shadow hover:bg-white"
-                aria-label="关闭"
-              >
-                关闭
-              </button>
-              <div className="flex h-full w-full items-center justify-center">
-                {filtered[previewIndex]?.type === "photo" ? (
-                  <div
-                    ref={previewContainerRef}
-                    className="relative flex h-full w-full items-center justify-center overflow-auto rounded-2xl bg-black"
-                    style={{ touchAction: "none" }}
-                    onPointerDown={handlePreviewPointerDown}
-                    onPointerMove={handlePreviewPointerMove}
-                    onPointerUp={handlePreviewPointerUp}
-                    onPointerCancel={handlePreviewPointerUp}
-                  >
-                    <img
-                      ref={previewImageRef}
-                      src={filtered[previewIndex]?.url}
-                      alt={filtered[previewIndex]?.title}
-                      className="block select-none object-contain"
-                      draggable={false}
-                      onDragStart={(e) => e.preventDefault()}
-                      style={{
-                        width:
-                          previewZoom === 1
-                            ? "auto"
-                            : baseSize.w
-                              ? `${baseSize.w * previewZoom}px`
-                              : `${96 * previewZoom}vw`,
-                        height:
-                          previewZoom === 1
-                            ? "auto"
-                            : baseSize.h
-                              ? `${baseSize.h * previewZoom}px`
-                              : "auto",
-                        maxWidth: previewZoom === 1 ? "96vw" : "none",
-                        maxHeight: previewZoom === 1 ? "92vh" : "none",
-                        cursor:
-                          previewZoom > 1 ? (isDragging ? "grabbing" : "grab") : "default",
-                        willChange: "transform",
-                      }}
-                    />
-                    {filtered[previewIndex]?.isLive && (
-                      <span className="absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-                        Live
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <div className="relative h-full w-full overflow-hidden rounded-2xl bg-black">
-                    <video
-                      controls
-                      autoPlay
-                      className="h-full w-full object-contain"
-                    >
-                      <source src={filtered[previewIndex]?.url} />
-                      您的浏览器不支持视频播放。
-                    </video>
-                  </div>
-                )}
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-semibold">照片/视频信息</div>
+                <button
+                  onClick={() => setInfoItem(null)}
+                  className="rounded-full bg-zinc-100 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-200"
+                >
+                  关闭
+                </button>
+              </div>
+              <div className="mt-4 space-y-2 text-sm text-zinc-700">
+                <p>类型：{infoItem.type === "photo" ? "照片" : "视频"}</p>
+                {infoItem.isLive && <p>Live：是</p>}
+                <p>格式：{infoItem.format ?? "未知"}</p>
+                <p>大小：{infoItem.sizeMB ? `${infoItem.sizeMB} MB` : "未知"}</p>
+                <p>拍摄时间：{infoItem.takenAt ?? "未知"}</p>
+                <p>设备：{infoItem.device ?? "未知"}</p>
+                <p>地点：{infoItem.location ?? "未知"}</p>
+                <p>存储：{infoItem.storagePath ?? "default/..."}</p>
+                <p>标题：{infoItem.title}</p>
+                <p>ID：{infoItem.id}</p>
+                <p>链接：{infoItem.url}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showMemberModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+            onClick={() => setShowMemberModal(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-zinc-900">添加成员</h3>
+                  <p className="text-sm text-zinc-600">邀请家庭成员加入相册并设置权限。</p>
+                </div>
+                <button
+                  onClick={() => setShowMemberModal(false)}
+                  className="rounded-full bg-zinc-100 px-3 py-1 text-sm text-zinc-700 hover:bg-zinc-200"
+                >
+                  关闭
+                </button>
               </div>
 
-              {filtered[previewIndex]?.type === "photo" && (
-                <div className="absolute bottom-4 right-4 flex items-center gap-2 rounded-lg bg-white/85 px-3 py-2 text-sm font-semibold text-zinc-800 shadow">
-                  <span className="text-xs text-zinc-600">缩放</span>
-                  <button
-                    onClick={() => handlePreviewZoom(-0.1)}
-                    className="rounded-md px-2 py-1 hover:bg-zinc-100"
-                    aria-label="预览缩小"
-                  >
-                    −
-                  </button>
-                  <div className="min-w-[48px] text-center">{(previewZoom * 100).toFixed(0)}%</div>
-                  <button
-                    onClick={() => handlePreviewZoom(0.1)}
-                    className="rounded-md px-2 py-1 hover:bg-zinc-100"
-                    aria-label="预览放大"
-                  >
-                    +
-                  </button>
-                  <button
-                    onClick={() => setPreviewZoom(1)}
-                    className="rounded-md px-2 py-1 text-xs text-blue-600 hover:bg-blue-50"
-                    aria-label="预览重置"
-                  >
-                    重置
-                  </button>
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-zinc-800">手机号/邮箱</label>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={memberInput}
+                      onChange={(e) => setMemberInput(e.target.value)}
+                      className="flex-1 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-400 focus:outline-none"
+                      placeholder="例如 138xxxx8888 或 email@example.com"
+                    />
+                    <button
+                      onClick={() => {
+                        if (!memberInput.trim()) return;
+                        const id = `m-${Date.now()}`;
+                        setMembers((prev) => [...prev, { id, contact: memberInput.trim(), status: "pending" }]);
+                        setMemberInput("");
+                      }}
+                      className="rounded-lg bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                    >
+                      添加
+                    </button>
+                  </div>
                 </div>
-              )}
+
+                <div className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                  <div className="text-sm font-semibold text-zinc-800">成员列表</div>
+                  <div className="space-y-2">
+                    {members.map((m) => (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm shadow-sm"
+                      >
+                        <div className="text-zinc-800">{m.contact}</div>
+                        {m.status === "pending" ? (
+                          <span className="text-sm font-semibold text-red-500">待加入</span>
+                        ) : (
+                          <select
+                            value={m.status}
+                            onChange={(e) => {
+                              const value = e.target.value as "pending" | "viewer" | "uploader" | "removed";
+                              setMembers((prev) =>
+                                prev.map((item) => (item.id === m.id ? { ...item, status: value } : item))
+                              );
+                            }}
+                            className="rounded-lg border border-zinc-200 px-2 py-1 text-sm text-zinc-800 focus:border-zinc-400 focus:outline-none"
+                          >
+                            <option value="viewer">仅预览</option>
+                            <option value="uploader">可上传</option>
+                            <option value="removed">移除成员</option>
+                          </select>
+                        )}
+                      </div>
+                    ))}
+                    {members.length === 0 && (
+                      <p className="text-sm text-zinc-500">暂无成员，添加后会显示在这里。</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3">
+                  <div>
+                    <div className="text-sm font-semibold text-zinc-800">邀请链接</div>
+                    <p className="text-xs text-zinc-600">开启后可复制分享给家人加入相册。</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1 text-sm text-zinc-700">
+                      <input
+                        type="checkbox"
+                        checked={inviteLinkOn}
+                        onChange={() => setInviteLinkOn((v) => !v)}
+                        className="h-4 w-4"
+                      />
+                      开启
+                    </label>
+                    <button
+                      onClick={() => {
+                        const url = new URL(window.location.href);
+                        url.searchParams.set("invite", "1");
+                        navigator.clipboard.writeText(url.toString());
+                        alert("邀请链接已复制");
+                      }}
+                      disabled={!inviteLinkOn}
+                      className={`rounded-lg px-3 py-2 text-sm font-semibold shadow-sm ${
+                        inviteLinkOn
+                          ? "bg-zinc-900 text-white hover:bg-zinc-800"
+                          : "bg-zinc-200 text-zinc-500 cursor-not-allowed"
+                      }`}
+                    >
+                      复制链接
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}

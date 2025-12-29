@@ -10,6 +10,7 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
+  { label: "Memory Wall", href: "/memory-wall", icon: "🧩" },
   { label: "上传照片", href: "/upload", icon: "⬆️" },
   { label: "我的相册", href: "/albums", icon: "🖼️" },
 ];
@@ -17,14 +18,18 @@ const navItems: NavItem[] = [
 type SidebarProps = {
   variant?: "desktop" | "mobile";
   onClose?: () => void;
+  headerOffset?: number;
+  width?: number;
 };
 
 export function Sidebar({ variant = "desktop", onClose }: SidebarProps) {
   const pathname = usePathname();
   const isMobile = variant === "mobile";
 
+  const width = 220;
+  const offset = 72; // align below header
   const baseClasses =
-    "flex h-[calc(100vh-1.5rem)] w-52 flex-col justify-between rounded-2xl bg-[#f2f5fb] px-2 py-3 text-sm text-zinc-800 shadow-sm";
+    "flex flex-col justify-between rounded-2xl bg-[#f2f5fb] px-2 py-3 text-sm text-zinc-800 shadow-sm";
   const desktopVisibility = "hidden lg:flex";
   const mobileOverlay =
     "fixed inset-y-4 left-3 z-50 flex border border-zinc-200";
@@ -32,6 +37,17 @@ export function Sidebar({ variant = "desktop", onClose }: SidebarProps) {
   return (
     <aside
       className={`${baseClasses} ${isMobile ? mobileOverlay : desktopVisibility}`}
+      style={
+        isMobile
+          ? { width }
+          : {
+              position: "fixed",
+              left: 12,
+              top: offset,
+              width,
+              height: `calc(100vh - ${offset + 12}px)`,
+            }
+      }
     >
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between px-3">
