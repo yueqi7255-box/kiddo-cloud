@@ -276,7 +276,7 @@ export default function AlbumDetail({
                     您的浏览器不支持视频播放。
                   </video>
                 )}
-                {item.isLive && (
+                {item.type === "photo" && item.isLive && (
                   <span className="absolute left-2 bottom-2 rounded-full bg-black/75 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
                     Live
                   </span>
@@ -329,7 +329,7 @@ export default function AlbumDetail({
               </div>
               <div className="mt-4 space-y-2 text-sm text-zinc-700">
                 <p>类型：{infoItem.type === "photo" ? "照片" : "视频"}</p>
-                {infoItem.isLive && <p>Live：是</p>}
+                {infoItem.type === "photo" && infoItem.isLive && <p>Live：是</p>}
                 <p>格式：{infoItem.format ?? "未知"}</p>
                 <p>大小：{infoItem.sizeMB ? `${infoItem.sizeMB} MB` : "未知"}</p>
                 <p>拍摄时间：{infoItem.takenAt ?? "未知"}</p>
