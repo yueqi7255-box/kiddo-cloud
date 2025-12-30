@@ -53,6 +53,7 @@ export function MediaPreviewer({
   const panStartRef = useRef<{ x: number; y: number } | null>(null);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const previewImageRef = useRef<HTMLImageElement | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const sizeCacheRef = useRef<Record<string, { w: number; h: number }>>({});
   const [baseSize, setBaseSize] = useState<{ w: number; h: number }>({
     w: 0,
@@ -400,7 +401,7 @@ export function MediaPreviewer({
               >
                 {sceneItem.media_type === "live" && sceneItem.livePlaybackUrl ? (
                   <video
-                    ref={attachRefs ? (previewImageRef as RefObject<HTMLVideoElement>) : null}
+                    ref={attachRefs ? previewVideoRef : null}
                     src={sceneItem.livePlaybackUrl}
                     controls
                     autoPlay={previewLivePlaying}

@@ -58,8 +58,9 @@ export default function MemoryWall() {
 
   useEffect(() => {
     async function ensureLogin() {
-      if (!supabaseClient) return;
-      const { data } = await supabaseClient.auth.getSession();
+      const client = supabaseClient;
+      if (!client) return;
+      const { data } = await client.auth.getSession();
       if (!data.session?.user) {
         router.replace("/login");
         return;
@@ -71,14 +72,15 @@ export default function MemoryWall() {
 
   useEffect(() => {
     async function loadMemories() {
-      if (!supabaseClient || !isAuthed) return;
-      const { data: sessionData } = await supabaseClient.auth.getSession();
+      const client = supabaseClient;
+      if (!client || !isAuthed) return;
+      const { data: sessionData } = await client.auth.getSession();
       const user = sessionData.session?.user;
       if (!user) return;
       const windowDays = Math.floor(Math.random() * (30 - 7 + 1)) + 7;
       const end = new Date();
       const start = new Date(end.getTime() - windowDays * 24 * 60 * 60 * 1000);
-      const { data, error } = await supabaseClient
+      const { data, error } = await client
         .from("photos")
         .select("id, storage_path, live_video_path, media_type, original_name, created_at")
         .eq("user_id", user.id)
@@ -91,11 +93,11 @@ export default function MemoryWall() {
       }
 
       const toMediaItem = (row: any): MediaItem | null => {
-        const { data: urlData } = supabaseClient.storage.from("photos").getPublicUrl(row.storage_path);
+        const { data: urlData } = client.storage.from("photos").getPublicUrl(row.storage_path);
         if (!urlData?.publicUrl) return null;
         const liveUrl =
           row.media_type === "live" && row.live_video_path
-            ? supabaseClient.storage.from("photos").getPublicUrl(row.live_video_path).data.publicUrl
+            ? client.storage.from("photos").getPublicUrl(row.live_video_path).data.publicUrl
             : null;
         return {
           id: row.id,
