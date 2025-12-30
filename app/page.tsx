@@ -1,44 +1,75 @@
+ "use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LayoutShell } from "@/components/layout-shell";
+import { supabaseClient } from "@/lib/supabase/client";
 
 export default function Home() {
-  return (
-    <LayoutShell hideSidebar>
-      <div className="flex flex-col gap-12">
-        <header className="flex flex-col gap-3">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-500">
-            Kiddo Cloud · 家庭私有云原型
-          </p>
-          <h1 className="text-4xl font-semibold leading-tight">
-              存好孩子的照片和成长记忆，简单、可长期使用。
-          </h1>
-          <p className="text-lg text-zinc-600">
-            当前是本地原型：前端 + 轻量 API（内存数据），未来可平滑接入 Supabase
-            认证 / 数据库 / 存储。
-          </p>
-          <div className="mt-4 flex flex-wrap gap-3 text-sm font-medium">
-            <Link
-              href="/login"
-              className="rounded-full bg-zinc-900 px-5 py-2 text-white transition hover:bg-zinc-800"
-            >
-              去登录（模拟）
-            </Link>
-          </div>
-        </header>
+  const router = useRouter();
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [checked, setChecked] = useState(false);
 
-        <section className="grid gap-4">
-          <h3 className="text-xl font-semibold">本地自检</h3>
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-5 shadow-sm">
-            <ol className="list-decimal space-y-2 pl-5 text-sm text-zinc-700">
-              <li>终端执行 <code>pnpm dev</code>，打开 http://localhost:3000</li>
-              <li>
-                访问 <code>/api/health</code> 应返回 status: ok；访问{" "}
-                <code>/api/photos</code> 返回 mock 照片列表
-              </li>
-              <li>未来接入 Supabase 时，只需在 <code>lib/supabase/</code> 补全客户端</li>
-            </ol>
+  useEffect(() => {
+    async function detectLogin() {
+      const localFlag = typeof window !== "undefined" && localStorage.getItem("kc_logged_in") === "true";
+      if (!supabaseClient) {
+        setIsAuthed(false);
+        setChecked(true);
+        return;
+      }
+      const { data } = await supabaseClient.auth.getSession();
+      const authed = Boolean(data.session?.user) && localFlag;
+      setIsAuthed(authed);
+      setChecked(true);
+    }
+    detectLogin();
+  }, []);
+
+  async function handleStart() {
+    const localFlag = typeof window !== "undefined" && localStorage.getItem("kc_logged_in") === "true";
+    if (!supabaseClient) return router.push("/login");
+    const { data } = await supabaseClient.auth.getSession();
+    const authed = Boolean(data.session?.user) && localFlag;
+    setIsAuthed(authed);
+    router.push(authed ? "/memory-wall" : "/login");
+  }
+
+  return (
+    <LayoutShell hideSidebar fullBleed>
+      <div className="relative flex h-[calc(100vh-64px)] w-full items-center justify-center overflow-hidden bg-gradient-to-br from-[#f5f6fb] via-[#eef1f8] to-[#e8ecf5] px-6 text-slate-900">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute left-[-10%] top-[-10%] h-72 w-72 rounded-full bg-[#c5d4ff]/30 blur-3xl" />
+          <div className="absolute right-[-6%] bottom-[-8%] h-80 w-80 rounded-full bg-[#dbe4ff]/35 blur-3xl" />
+          <div className="absolute inset-16 rounded-3xl border border-white/30 bg-white/30 backdrop-blur-[8px]" />
+        </div>
+
+        <div className="relative z-10 flex max-w-4xl flex-col items-center gap-10 text-center">
+          <span className="rounded-full bg-white/60 px-4 py-1 text-xs font-semibold uppercase tracking-[0.32em] text-slate-600 shadow-sm shadow-slate-900/5">
+            Kiddo Cloud
+          </span>
+
+          <h1 className="text-[40px] font-semibold leading-snug text-slate-900 md:text-[48px]">
+            把孩子的成长，
+            <br />
+            放在一个不会被打扰的地方。
+          </h1>
+
+          <div className="flex flex-col gap-2 text-base text-slate-600 md:text-lg">
+            <span>· 照片高清不压缩</span>
+            <span>· 老人也能轻松回忆</span>
+            <span>· 打开，就是记忆本身</span>
           </div>
-        </section>
+
+          <button
+            onClick={handleStart}
+            disabled={!checked}
+            className="rounded-full bg-slate-900 px-8 py-3 text-base font-semibold text-white shadow-xl shadow-slate-900/10 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            开始使用
+          </button>
+        </div>
       </div>
     </LayoutShell>
   );

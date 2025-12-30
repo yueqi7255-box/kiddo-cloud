@@ -1,17 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { LayoutShell } from "@/components/layout-shell";
 import { listPhotos } from "@/lib/photos";
+import { supabaseClient } from "@/lib/supabase/client";
+import { ensureDefaultAlbum, listUserAlbums } from "@/lib/supabase/albums";
 
 type Album = {
   id: string;
   name: string;
-  count: number;
-  description: string;
+  count?: number;
+  description?: string;
   cover: string;
   type: "normal" | "smart";
+  created_at?: string;
 };
 
 function randomCover(): string {
@@ -22,42 +26,105 @@ function randomCover(): string {
 }
 
 export default function AlbumsPage() {
-  const initialAlbums = useMemo<Album[]>(
-    () => [
-      {
-        id: "default",
-        name: "默认相册",
-        count: listPhotos().length,
-        description: "上传的照片/视频默认归档到这里",
-        cover: randomCover(),
-        type: "normal",
-      },
-    ],
-    []
-  );
-  const [albums, setAlbums] = useState<Album[]>(initialAlbums);
+  const router = useRouter();
+  const [albums, setAlbums] = useState<Album[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"normal" | "smart">("normal");
+  const [loading, setLoading] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [countsLoading, setCountsLoading] = useState(false);
 
-  function handleCreate() {
+  async function handleCreate() {
     if (!newName.trim()) return;
-    const id = `album-${Date.now()}`;
-    const count = Math.max(1, Math.floor(Math.random() * 12) + 1);
-    const cover = randomCover();
-    const album: Album = {
-      id,
+    if (!supabaseClient) return;
+    if (!userId) return;
+    setLoading(true);
+    const { error } = await supabaseClient.from("albums").insert({
+      user_id: userId,
       name: newName.trim(),
-      count,
-      description: newType === "smart" ? "智能相册 · 自动归类" : "手动管理的相册",
-      cover,
-      type: newType,
-    };
-    setAlbums((prev) => [...prev, album]);
+    });
+    if (error) {
+      console.log("创建相册失败", error);
+    }
+    // 重新查询
+    await loadAlbums(userId);
     setShowCreate(false);
     setNewName("");
     setNewType("normal");
+    setLoading(false);
   }
+
+  async function loadAlbums(uid: string) {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient
+      .from("albums")
+      .select("id, name, created_at")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.log("查询相册失败", error);
+      return;
+    }
+    const mapped =
+      data?.map<Album>((a) => ({
+        id: String(a.id),
+        name: a.name ?? "未命名",
+        type: "normal",
+        cover: randomCover(),
+        description: "",
+        count: undefined,
+        created_at: a.created_at,
+      })) ?? [];
+    setAlbums(mapped);
+    refreshCounts(uid, mapped);
+    // 后台确保默认相册，不阻塞渲染
+    ensureDefaultAlbum(uid).then((def) => {
+      if (!def) return;
+      // 如默认相册不存在列表，再次刷新
+      if (!mapped.find((a) => a.id === def.id)) {
+        loadAlbums(uid);
+      }
+    });
+  }
+
+  async function refreshCounts(uid: string, current: Album[]) {
+    if (!supabaseClient || current.length === 0) return;
+    setCountsLoading(true);
+    const { data, error } = await supabaseClient.from("photos").select("album_id, id");
+    if (error) {
+      console.log("查询内容数量失败", error);
+      setCountsLoading(false);
+      return;
+    }
+    const map = new Map<string, number>();
+    (data ?? []).forEach((row: any) => {
+      const key = String(row.album_id);
+      map.set(key, (map.get(key) ?? 0) + 1);
+    });
+    setAlbums((prev) =>
+      prev.map((a) => ({
+        ...a,
+        count: map.get(a.id) ?? 0,
+      }))
+    );
+    setCountsLoading(false);
+  }
+
+  useEffect(() => {
+    async function init() {
+      if (!supabaseClient) return;
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      const user = sessionData.session?.user;
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
+      setUserId(user.id);
+      await loadAlbums(user.id);
+    }
+    init();
+  }, [router]);
 
   return (
     <LayoutShell>
@@ -89,21 +156,23 @@ export default function AlbumsPage() {
           {albums.map((album) => (
             <Link
               key={album.id}
-              href={{ pathname: `/albums/${album.id}`, query: { title: album.name, type: album.type } }}
+              href={{ pathname: `/albums/${album.id}`, query: { title: album.name, type: album.type, albumId: album.id } }}
               className="group relative overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300"
             >
-              <div className="h-36 w-full overflow-hidden">
-                <img src={album.cover} alt={album.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
-              </div>
-              <div className="space-y-1 px-4 py-3">
-                <div className="flex items-center justify-between">
+          <div className="h-36 w-full overflow-hidden">
+            <img src={album.cover} alt={album.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
+          </div>
+          <div className="space-y-1 px-4 py-3">
+            <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-zinc-900">{album.name}</h2>
                   <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-700">
                     {album.type === "smart" ? "智能" : "普通"}
                   </span>
                 </div>
                 <p className="text-sm text-zinc-600">{album.description}</p>
-                <p className="text-sm font-medium text-zinc-800">{album.count} 条内容 · 点击进入</p>
+                <p className="text-sm font-medium text-zinc-800">
+                  {album.count !== undefined ? `${album.count} 条内容` : countsLoading ? "加载中..." : "0 条内容"} · 点击进入
+                </p>
               </div>
             </Link>
           ))}
@@ -136,6 +205,7 @@ export default function AlbumsPage() {
                   onChange={(e) => setNewName(e.target.value)}
                   className="mt-2 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-400 focus:outline-none"
                   placeholder="如：家庭旅行"
+                  disabled={loading}
                 />
               </div>
               <div className="space-y-2">
@@ -148,6 +218,7 @@ export default function AlbumsPage() {
                         ? "border-zinc-900 bg-zinc-900 text-white"
                         : "border-zinc-200 text-zinc-700 hover:border-zinc-300"
                     }`}
+                    disabled={loading}
                   >
                     普通相册
                   </button>
@@ -158,6 +229,7 @@ export default function AlbumsPage() {
                         ? "border-zinc-900 bg-zinc-900 text-white"
                         : "border-zinc-200 text-zinc-700 hover:border-zinc-300"
                     }`}
+                    disabled={loading}
                   >
                     智能相册
                   </button>
@@ -172,9 +244,10 @@ export default function AlbumsPage() {
                 </button>
                 <button
                   onClick={handleCreate}
-                  className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                  className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                  disabled={loading}
                 >
-                  创建
+                  {loading ? "创建中..." : "创建"}
                 </button>
               </div>
             </div>

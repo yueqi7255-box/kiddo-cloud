@@ -1,79 +1,11 @@
 "use client";
 
 import { use, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { LayoutShell } from "@/components/layout-shell";
 import { MediaPreviewer, type MediaItem } from "@/components/media-previewer";
-import { listPhotos } from "@/lib/photos";
-
-const mockVideos: MediaItem[] = [
-  {
-    id: "v1",
-    type: "video",
-    title: "Play time",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    takenAt: "2023-09-01",
-    format: "mp4",
-    sizeMB: 12.5,
-    device: "iPhone 14",
-    storagePath: "default/v1.mp4",
-  },
-  {
-    id: "v2",
-    type: "video",
-    title: "Snow fight",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    takenAt: "2023-12-22",
-    format: "mp4",
-    sizeMB: 18.2,
-    device: "Pixel 8",
-    storagePath: "default/v2.mp4",
-  },
-  {
-    id: "v3",
-    type: "video",
-    title: "Bike ride",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    takenAt: "2024-04-10",
-    format: "mp4",
-    sizeMB: 15.0,
-    device: "GoPro 11",
-    storagePath: "default/v3.mp4",
-  },
-  {
-    id: "v4",
-    type: "video",
-    title: "School play",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    takenAt: "2024-05-30",
-    format: "mp4",
-    sizeMB: 22.1,
-    device: "iPhone 15",
-    storagePath: "default/v4.mp4",
-  },
-  {
-    id: "v5",
-    type: "video",
-    title: "Pool fun",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    takenAt: "2024-07-12",
-    format: "mp4",
-    sizeMB: 10.8,
-    device: "Pixel 7",
-    storagePath: "default/v5.mp4",
-  },
-];
-
-function buildMedia(): MediaItem[] {
-  const photos = listPhotos().map<MediaItem>((p) => ({
-    id: p.id,
-    type: "photo",
-    title: p.title,
-    url: p.url,
-    takenAt: p.takenAt,
-  }));
-  return [...photos, ...mockVideos];
-}
+import { supabaseClient } from "@/lib/supabase/client";
+import { ensureDefaultAlbum } from "@/lib/supabase/albums";
 
 const filterOptions = [
   { value: "all", label: "全部" },
@@ -87,6 +19,7 @@ export default function AlbumDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "photo" | "video">("all");
   const [zoom, setZoom] = useState(1); // 1.0 = 默认缩放
@@ -103,6 +36,81 @@ export default function AlbumDetail({
     { id: "m1", contact: "mom@example.com", status: "viewer" },
     { id: "m2", contact: "dad@example.com", status: "uploader" },
   ]);
+  const [uploaded, setUploaded] = useState<MediaItem[]>([]);
+  const [albumId, setAlbumId] = useState<string | null>(null);
+  const [isAuthed, setIsAuthed] = useState(false);
+
+  useEffect(() => {
+    async function ensureLogin() {
+      if (!supabaseClient) return;
+      const { data } = await supabaseClient.auth.getSession();
+      if (!data.session?.user) {
+        router.replace("/login");
+        return;
+      }
+      setIsAuthed(true);
+    }
+    ensureLogin();
+  }, [router]);
+
+  useEffect(() => {
+    async function fetchUploads() {
+      if (!supabaseClient || !isAuthed) return;
+      const { data: sessionData, error: sessionErr } = await supabaseClient.auth.getSession();
+      const user = sessionData.session?.user;
+      if (sessionErr || !user) return;
+      const userId = user.id;
+      const defaultAlbum = await ensureDefaultAlbum(userId);
+      const urlAlbumId = searchParams.get("albumId");
+      const routeAlbumId = id !== "default" ? id : null;
+      const targetAlbumId = urlAlbumId || routeAlbumId || (defaultAlbum ? (defaultAlbum.id as string) : null);
+      setAlbumId(targetAlbumId ?? null);
+      if (!targetAlbumId) return;
+
+      const { data, error } = await supabaseClient
+        .from("photos")
+        .select("id, storage_path, live_video_path, media_type, original_name, created_at")
+        .eq("album_id", targetAlbumId)
+        .order("created_at", { ascending: false });
+      if (error) {
+        console.log("获取相册照片失败", error);
+        return;
+      }
+      const items =
+        data?.map<MediaItem>((row) => {
+          const decodedName = (() => {
+            try {
+              return decodeURIComponent(row.original_name ?? "");
+            } catch {
+              return row.original_name ?? "";
+            }
+          })();
+          const { data: urlData } = supabaseClient.storage.from("photos").getPublicUrl(row.storage_path);
+          const liveUrl =
+            row.media_type === "live" && row.live_video_path
+              ? supabaseClient.storage.from("photos").getPublicUrl(row.live_video_path).data.publicUrl
+              : null;
+          return {
+            id: row.id.toString(),
+            type: row.media_type === "video" ? "video" : "photo",
+            isLive: row.media_type === "live",
+            livePlaybackUrl: liveUrl ?? undefined,
+            title: decodedName || row.storage_path,
+            url: urlData.publicUrl,
+            takenAt: row.created_at ?? undefined,
+          };
+        }) ?? [];
+      setUploaded(items);
+    }
+    fetchUploads();
+    function onRefresh(e: StorageEvent) {
+      if (e.key === "kc_album_refresh") {
+        fetchUploads();
+      }
+    }
+    window.addEventListener("storage", onRefresh);
+    return () => window.removeEventListener("storage", onRefresh);
+  }, [id, searchParams, isAuthed]);
 
   const albumTitle = searchParams.get("title") || (id === "default" ? "默认相册" : "我的相册");
 
@@ -125,13 +133,9 @@ export default function AlbumDetail({
   const thumbWidth = Math.round(thumbBase * zoom);
   const gap = Math.round(thumbWidth * 0.05); // 行列间距为占位高度的 5%
 
-  const filtered = useMemo(
-    () =>
-      buildMedia().filter((item) =>
-        filter === "all" ? true : item.type === filter
-      ),
-    [filter]
-  );
+  const filtered = useMemo(() => {
+    return uploaded.filter((item) => (filter === "all" ? true : item.type === filter));
+  }, [filter, uploaded]);
 
   // 保证选中索引合法
   useEffect(() => {

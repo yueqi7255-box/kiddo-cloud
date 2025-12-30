@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LayoutShell } from "@/components/layout-shell";
-import { listPhotos } from "@/lib/photos";
+import { supabaseClient } from "@/lib/supabase/client";
 
 export type MediaItem = {
   id: string;
@@ -20,55 +20,6 @@ type Memory = {
   items: MediaItem[];
 };
 
-function buildMemories(): Memory[] {
-  const photos = listPhotos();
-  const memoryA: Memory = {
-    id: "family-moments",
-    title: "家庭片段",
-    items: photos.slice(0, 8).map<MediaItem>((p) => ({
-      id: p.id,
-      type: p.isLive ? "live" : "photo",
-      url: p.url,
-      livePlaybackUrl: p.livePlaybackUrl,
-      createdAt: p.takenAt,
-    })),
-  };
-  const memoryB: Memory = {
-    id: "outdoor",
-    title: "户外日记",
-    items: photos.slice(8, 16).map<MediaItem>((p) => ({
-      id: p.id,
-      type: p.isLive ? "live" : "photo",
-      url: p.url,
-      livePlaybackUrl: p.livePlaybackUrl,
-      createdAt: p.takenAt,
-    })),
-  };
-  const fallback: Memory = {
-    id: "videos",
-    title: "快乐影像",
-    items: [
-      {
-        id: "v1",
-        type: "video",
-        url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-        poster:
-          "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=900&q=80",
-        createdAt: "2024-02-01",
-      },
-      {
-        id: "v2",
-        type: "video",
-        url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-        poster:
-          "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
-        createdAt: "2024-03-12",
-      },
-    ],
-  };
-  return [memoryA, memoryB, fallback].filter((m) => m.items.length > 0);
-}
-
 function getNextIndices(current: number, total: number, count: number) {
   const res: number[] = [];
   for (let i = 1; i <= count; i++) {
@@ -80,11 +31,12 @@ function getNextIndices(current: number, total: number, count: number) {
 export default function MemoryWall() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const memories = useMemo(() => buildMemories(), []);
-  const [activeMemoryId, setActiveMemoryId] = useState(memories[0]?.id ?? "");
+  const [memories, setMemories] = useState<Memory[]>([]);
+  const [activeMemoryId, setActiveMemoryId] = useState<string>("");
   const [sceneIndex, setSceneIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const activeMemory = memories.find((m) => m.id === activeMemoryId) ?? memories[0];
@@ -103,6 +55,104 @@ export default function MemoryWall() {
       requestFullscreen();
     }
   }, [searchParams, memories]);
+
+  useEffect(() => {
+    async function ensureLogin() {
+      if (!supabaseClient) return;
+      const { data } = await supabaseClient.auth.getSession();
+      if (!data.session?.user) {
+        router.replace("/login");
+        return;
+      }
+      setIsAuthed(true);
+    }
+    ensureLogin();
+  }, [router]);
+
+  useEffect(() => {
+    async function loadMemories() {
+      if (!supabaseClient || !isAuthed) return;
+      const { data: sessionData } = await supabaseClient.auth.getSession();
+      const user = sessionData.session?.user;
+      if (!user) return;
+      const windowDays = Math.floor(Math.random() * (30 - 7 + 1)) + 7;
+      const end = new Date();
+      const start = new Date(end.getTime() - windowDays * 24 * 60 * 60 * 1000);
+      const { data, error } = await supabaseClient
+        .from("photos")
+        .select("id, storage_path, live_video_path, media_type, original_name, created_at")
+        .eq("user_id", user.id)
+        .gte("created_at", start.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(80);
+      if (error) {
+        console.log("获取 Memory Wall 数据失败", error);
+        return;
+      }
+
+      const toMediaItem = (row: any): MediaItem | null => {
+        const { data: urlData } = supabaseClient.storage.from("photos").getPublicUrl(row.storage_path);
+        if (!urlData?.publicUrl) return null;
+        const liveUrl =
+          row.media_type === "live" && row.live_video_path
+            ? supabaseClient.storage.from("photos").getPublicUrl(row.live_video_path).data.publicUrl
+            : null;
+        return {
+          id: row.id,
+          type: row.media_type === "video" ? "video" : row.media_type === "live" ? "live" : "photo",
+          url: urlData.publicUrl,
+          livePlaybackUrl: liveUrl ?? undefined,
+          createdAt: row.created_at,
+        };
+      };
+
+      const itemsRaw = (data ?? []).map(toMediaItem).filter(Boolean) as MediaItem[];
+
+      // 去掉时间过近的重复（2分钟内）
+      const deduped: MediaItem[] = [];
+      let lastTs = 0;
+      for (const item of itemsRaw) {
+        const ts = item.createdAt ? new Date(item.createdAt).getTime() : 0;
+        if (Math.abs(ts - lastTs) < 2 * 60 * 1000) continue;
+        lastTs = ts;
+        deduped.push(item);
+      }
+
+      const targetCount = Math.min(40, Math.max(20, deduped.length));
+      const priority = deduped.filter((m) => m.type !== "photo");
+      const photosOnly = deduped.filter((m) => m.type === "photo");
+      const reordered: MediaItem[] = [];
+      let pIdx = 0;
+      let vIdx = 0;
+      while (reordered.length < targetCount && (pIdx < photosOnly.length || vIdx < priority.length)) {
+        if (vIdx < priority.length) {
+          reordered.push(priority[vIdx++]);
+        }
+        if (reordered.length >= targetCount) break;
+        if (pIdx < photosOnly.length) {
+          const last = reordered[reordered.length - 1];
+          if (last && last.type === "photo" && vIdx < priority.length) {
+            reordered.push(priority[vIdx++]);
+          } else {
+            reordered.push(photosOnly[pIdx++]);
+          }
+        }
+      }
+      if (reordered.length === 0 && itemsRaw.length > 0) {
+        reordered.push(itemsRaw[0]);
+      }
+
+      const mem: Memory = {
+        id: "memory-auto",
+        title: "回忆精选",
+        items: reordered,
+      };
+      setMemories([mem]);
+      setActiveMemoryId("memory-auto");
+      setSceneIndex(0);
+    }
+    loadMemories();
+  }, [isAuthed]);
 
   // 全屏状态监听
   useEffect(() => {
@@ -250,9 +300,10 @@ export default function MemoryWall() {
           <section className="flex flex-col gap-2 px-2 pb-3">
             <div className="text-sm uppercase tracking-[0.3em] text-white/50">记忆列表</div>
             <div
-              className="grid gap-2"
+              className="grid gap-3"
               style={{
-                gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 260px))",
+                justifyContent: "flex-start",
               }}
             >
               {memories.map((memory) => {
