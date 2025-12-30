@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LayoutShell } from "@/components/layout-shell";
 import { supabaseClient } from "@/lib/supabase/client";
@@ -20,6 +20,8 @@ type Memory = {
   items: MediaItem[];
 };
 
+export const dynamic = "force-dynamic";
+
 function getNextIndices(current: number, total: number, count: number) {
   const res: number[] = [];
   for (let i = 1; i <= count; i++) {
@@ -28,7 +30,7 @@ function getNextIndices(current: number, total: number, count: number) {
   return res;
 }
 
-export default function MemoryWall() {
+function MemoryWall() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -338,6 +340,14 @@ export default function MemoryWall() {
         )}
       </div>
     </LayoutShell>
+  );
+}
+
+export default function MemoryWallPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+      <MemoryWall />
+    </Suspense>
   );
 }
 
