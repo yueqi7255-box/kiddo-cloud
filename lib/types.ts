@@ -4,7 +4,7 @@ export type Photo = {
   url: string;
   takenAt?: string;
   tags?: string[];
-  isLive?: boolean;
+  media_type?: "photo" | "video" | "live";
   format?: string;
   sizeMB?: number;
   location?: string;

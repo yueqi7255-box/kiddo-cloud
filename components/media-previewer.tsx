@@ -6,10 +6,10 @@ export type MediaItem =
   | {
       id: string;
       type: "photo";
+      media_type?: "photo" | "live";
       title: string;
       url: string;
       takenAt?: string;
-      isLive?: boolean;
       livePlaybackUrl?: string;
       format?: string;
       sizeMB?: number;
@@ -20,6 +20,7 @@ export type MediaItem =
   | {
       id: string;
       type: "video";
+      media_type?: "video";
       title: string;
       url: string;
       takenAt?: string;
@@ -397,7 +398,7 @@ export function MediaPreviewer({
                 onMouseEnter={() => setVideoHover(true)}
                 onMouseLeave={() => setVideoHover(false)}
               >
-                {sceneItem.isLive && sceneItem.livePlaybackUrl ? (
+                {sceneItem.media_type === "live" && sceneItem.livePlaybackUrl ? (
                   <video
                     ref={attachRefs ? (previewImageRef as RefObject<HTMLVideoElement>) : null}
                     src={sceneItem.livePlaybackUrl}
@@ -437,7 +438,7 @@ export function MediaPreviewer({
                     }}
                   />
                 )}
-                {sceneItem.isLive && sceneItem.livePlaybackUrl && (
+                {sceneItem.media_type === "live" && sceneItem.livePlaybackUrl && (
                   <button
                     onClick={() => setPreviewLivePlaying((v) => !v)}
                     className={`absolute left-3 top-3 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white hover:bg-black/80 ${
