@@ -76,30 +76,36 @@ export default function AlbumDetail({
         console.log("获取相册照片失败", error);
         return;
       }
+      const client = supabaseClient;
+      if (!client) return;
       const items =
-        data?.map<MediaItem>((row) => {
-          const decodedName = (() => {
-            try {
-              return decodeURIComponent(row.original_name ?? "");
-            } catch {
-              return row.original_name ?? "";
-            }
-          })();
-          const { data: urlData } = supabaseClient.storage.from("photos").getPublicUrl(row.storage_path);
-          const liveUrl =
-            row.media_type === "live" && row.live_video_path
-              ? supabaseClient.storage.from("photos").getPublicUrl(row.live_video_path).data.publicUrl
-              : null;
-          return {
-            id: row.id.toString(),
-            type: row.media_type === "video" ? "video" : "photo",
-            isLive: row.media_type === "live",
-            livePlaybackUrl: liveUrl ?? undefined,
-            title: decodedName || row.storage_path,
-            url: urlData.publicUrl,
-            takenAt: row.created_at ?? undefined,
-          };
-        }) ?? [];
+        data
+          ?.map<MediaItem | null>((row) => {
+            const decodedName = (() => {
+              try {
+                return decodeURIComponent(row.original_name ?? "");
+              } catch {
+                return row.original_name ?? "";
+              }
+            })();
+            const urlResult = client.storage.from("photos").getPublicUrl(row.storage_path);
+            const publicUrl = urlResult.data?.publicUrl;
+            if (!publicUrl) return null;
+            const liveUrl =
+              row.media_type === "live" && row.live_video_path
+                ? client.storage.from("photos").getPublicUrl(row.live_video_path).data.publicUrl
+                : null;
+            return {
+              id: row.id.toString(),
+              type: row.media_type === "video" ? "video" : "photo",
+              isLive: row.media_type === "live",
+              livePlaybackUrl: liveUrl ?? undefined,
+              title: decodedName || row.storage_path,
+              url: publicUrl,
+              takenAt: row.created_at ?? undefined,
+            };
+          })
+          .filter(Boolean) as MediaItem[] ?? [];
       setUploaded(items);
     }
     fetchUploads();
