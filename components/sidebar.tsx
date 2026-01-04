@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { supabaseClient } from "@/lib/supabase/client";
 
 type NavItem = {
   label: string;
@@ -9,10 +11,12 @@ type NavItem = {
   icon?: string;
 };
 
-const navItems: NavItem[] = [
+const staticNav: NavItem[] = [
   { label: "Memory Wall", href: "/memory-wall", icon: "🧩" },
+  { label: "我的孩子", href: "/albums", icon: "👶" },
   { label: "上传照片", href: "/upload", icon: "⬆️" },
-  { label: "我的相册", href: "/albums", icon: "🖼️" },
+  { label: "待确认", href: "/pending", icon: "⏳" },
+  { label: "回收站", href: "/trash", icon: "🗑️" },
 ];
 
 type SidebarProps = {
@@ -25,6 +29,7 @@ type SidebarProps = {
 export function Sidebar({ variant = "desktop", onClose }: SidebarProps) {
   const pathname = usePathname();
   const isMobile = variant === "mobile";
+  const [childrenNav] = useState<NavItem[]>([]);
 
   const width = 220;
   const offset = 72; // align below header
@@ -62,11 +67,11 @@ export function Sidebar({ variant = "desktop", onClose }: SidebarProps) {
           )}
         </div>
         <nav className="flex flex-col gap-1">
-          {navItems.map((item) => {
+          {staticNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
-                key={item.href}
+                key={item.href + item.label}
                 href={item.href}
                 onClick={isMobile ? onClose : undefined}
                 className={`flex items-center gap-3 rounded-xl px-3 py-2 transition ${
@@ -74,7 +79,7 @@ export function Sidebar({ variant = "desktop", onClose }: SidebarProps) {
                 }`}
               >
                 <span className="text-lg">{item.icon ?? "•"}</span>
-                <span>{item.label}</span>
+                <span className="truncate">{item.label}</span>
               </Link>
             );
           })}

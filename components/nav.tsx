@@ -17,6 +17,7 @@ export function NavBar({ onMenuClick }: NavBarProps) {
   const [showProfile, setShowProfile] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const isLoggedIn = loggedIn && Boolean(userId);
 
   useEffect(() => {
     const flag = typeof window !== "undefined" ? localStorage.getItem("kc_logged_in") === "true" : false;
@@ -71,7 +72,7 @@ export function NavBar({ onMenuClick }: NavBarProps) {
             </Link>
           </div>
           <div className="hidden items-center gap-3 text-sm font-medium text-zinc-700 md:flex">
-            {loggedIn ? (
+            {isLoggedIn ? (
               <div className="relative">
                 <button
                   onClick={() => setMenuOpen((v) => !v)}

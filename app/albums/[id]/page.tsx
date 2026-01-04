@@ -67,10 +67,24 @@ export default function AlbumDetail({
       setAlbumId(targetAlbumId ?? null);
       if (!targetAlbumId) return;
 
+      // 确认相册归属当前用户，避免 RLS 拦截无提示
+      const { data: albumRow, error: albumErr } = await supabaseClient
+        .from("albums")
+        .select("id, user_id, name")
+        .eq("id", targetAlbumId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (albumErr || !albumRow) {
+        console.log("相册不存在或无权限", albumErr);
+        router.replace("/albums");
+        return;
+      }
+
       const { data, error } = await supabaseClient
-        .from("photos")
+        .from("media")
         .select("id, storage_path, live_video_path, media_type, original_name, created_at")
         .eq("album_id", targetAlbumId)
+        .eq("user_id", userId)
         .order("created_at", { ascending: false });
       if (error) {
         console.log("获取相册照片失败", error);
@@ -88,13 +102,15 @@ export default function AlbumDetail({
                 return row.original_name ?? "";
               }
             })();
-            const urlResult = client.storage.from("photos").getPublicUrl(row.storage_path);
-            const publicUrl = urlResult.data?.publicUrl;
+            const bucket = client.storage.from("photos");
+            const publicUrl =
+              bucket.getPublicUrl(
+                row.storage_path,
+                row.media_type === "live" ? { transform: { format: "webp", quality: 90 } } : undefined
+              ).data.publicUrl ?? bucket.getPublicUrl(row.storage_path).data.publicUrl;
             if (!publicUrl) return null;
             const liveUrl =
-              row.media_type === "live" && row.live_video_path
-                ? client.storage.from("photos").getPublicUrl(row.live_video_path).data.publicUrl
-                : null;
+              row.media_type === "live" && row.live_video_path ? bucket.getPublicUrl(row.live_video_path).data.publicUrl : null;
             return {
               id: row.id.toString(),
               type: row.media_type === "video" ? "video" : "photo",

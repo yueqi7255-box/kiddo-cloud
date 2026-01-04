@@ -39,7 +39,9 @@ function MemoryWall() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const thumbBarRef = useRef<HTMLDivElement | null>(null);
 
   const activeMemory = memories.find((m) => m.id === activeMemoryId) ?? memories[0];
   const totalScenes = activeMemory?.items.length ?? 0;
@@ -83,7 +85,7 @@ function MemoryWall() {
       const end = new Date();
       const start = new Date(end.getTime() - windowDays * 24 * 60 * 60 * 1000);
       const { data, error } = await client
-        .from("photos")
+        .from("media")
         .select("id, storage_path, live_video_path, media_type, original_name, created_at")
         .eq("user_id", user.id)
         .gte("created_at", start.toISOString())
@@ -95,16 +97,17 @@ function MemoryWall() {
       }
 
       const toMediaItem = (row: any): MediaItem | null => {
-        const { data: urlData } = client.storage.from("photos").getPublicUrl(row.storage_path);
-        if (!urlData?.publicUrl) return null;
+        const bucket = client.storage.from("photos");
+        const transformed =
+          bucket.getPublicUrl(row.storage_path, row.media_type === "live" ? { transform: { format: "webp", quality: 90 } } : undefined)
+            .data.publicUrl ?? bucket.getPublicUrl(row.storage_path).data.publicUrl;
+        if (!transformed) return null;
         const liveUrl =
-          row.media_type === "live" && row.live_video_path
-            ? client.storage.from("photos").getPublicUrl(row.live_video_path).data.publicUrl
-            : null;
+          row.media_type === "live" && row.live_video_path ? bucket.getPublicUrl(row.live_video_path).data.publicUrl : null;
         return {
           id: row.id,
           type: row.media_type === "video" ? "video" : row.media_type === "live" ? "live" : "photo",
-          url: urlData.publicUrl,
+          url: transformed,
           livePlaybackUrl: liveUrl ?? undefined,
           createdAt: row.created_at,
         };
@@ -187,6 +190,42 @@ function MemoryWall() {
     setIsPlaying((v) => !v);
   }
 
+  function showControls() {
+    setControlsVisible(true);
+  }
+
+  function hideControls() {
+    setControlsVisible(false);
+  }
+
+  function setMemory(id: string) {
+    setActiveMemoryId(id);
+    setSceneIndex(0);
+    setIsPlaying(true);
+    const url = new URL(window.location.href);
+    url.searchParams.set("memory", id);
+    router.replace(`${url.pathname}?${url.searchParams.toString()}`);
+  }
+
+  function nextMemory(delta: 1 | -1) {
+    if (memories.length === 0) return;
+    const currentIdx = memories.findIndex((m) => m.id === activeMemoryId);
+    const idx = currentIdx >= 0 ? currentIdx : 0;
+    const nextIdx = (idx + delta + memories.length) % memories.length;
+    setMemory(memories[nextIdx].id);
+  }
+
+  useEffect(() => {
+    if (!thumbBarRef.current) return;
+    const activeThumb = thumbBarRef.current.querySelector<HTMLButtonElement>('[data-active="true"]');
+    if (activeThumb && thumbBarRef.current) {
+      const barRect = thumbBarRef.current.getBoundingClientRect();
+      const thumbRect = activeThumb.getBoundingClientRect();
+      const offset = thumbRect.left - barRect.left - barRect.width / 2 + thumbRect.width / 2;
+      thumbBarRef.current.scrollBy({ left: offset, behavior: "smooth" });
+    }
+  }, [sceneIndex, activeMemoryId]);
+
   function requestFullscreen() {
     if (document.fullscreenElement) return;
     const target = containerRef.current ?? document.documentElement;
@@ -211,70 +250,74 @@ function MemoryWall() {
     }
   }
 
-  function setMemory(id: string) {
-    setActiveMemoryId(id);
-    setSceneIndex(0);
-    setIsPlaying(true);
-    const url = new URL(window.location.href);
-    url.searchParams.set("memory", id);
-    router.replace(`${url.pathname}?${url.searchParams.toString()}`);
-  }
-
   const fullscreenWrapperClass = isFullscreen
-    ? "fixed inset-0 z-50 bg-black text-white"
-    : "flex min-h-[calc(100vh-64px)] flex-col gap-4 bg-gradient-to-b from-[#0b0f1a] via-[#0f1524] to-[#0b0f1a] px-0 pb-6 text-white";
+    ? "fixed inset-0 z-50 bg-white text-zinc-900"
+    : "flex h-[calc(100vh-64px)] flex-row bg-gradient-to-b from-[#f7f8fb] via-white to-[#eef1f5] text-zinc-900 overflow-hidden";
 
   return (
     <LayoutShell fullBleed>
       <div className={fullscreenWrapperClass}>
-        <header
-          className={`${
-            isFullscreen ? "absolute left-0 right-0 top-0" : "sticky top-0"
-          } z-10 flex flex-wrap items-center justify-between gap-3 bg-black/20 px-4 py-2 backdrop-blur`}
-        >
-          <div className="flex items-center gap-3">
-            <div className="text-xs uppercase tracking-[0.3em] text-white/60">Memory Wall</div>
-            <div className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-sm font-semibold">
-              <span className="text-white/70">当前记忆</span>
+        {!isFullscreen && (
+          <aside className="flex w-[240px] flex-col gap-3 border-r border-zinc-200/70 bg-white/70 p-3 backdrop-blur-lg">
+            <div className="flex flex-wrap gap-2">
               <button
-                className="rounded-lg bg-white/10 px-3 py-1 text-white hover:bg-white/20"
-                onClick={() => {
-                  const next = memories[(memories.findIndex((m) => m.id === activeMemoryId) + 1) % memories.length];
-                  setMemory(next.id);
-                }}
+                onClick={requestFullscreen}
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 shadow-sm hover:bg-zinc-50"
               >
-                {activeMemory?.title ?? "未命名"}
+                全屏
+              </button>
+              <button
+                onClick={handleShare}
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 shadow-sm hover:bg-zinc-50"
+              >
+                分享
               </button>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={requestFullscreen}
-              className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold hover:bg-white/20"
-            >
-              全屏
-            </button>
-            <button
-              onClick={handleShare}
-              className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold hover:bg-white/20"
-            >
-              分享
-            </button>
-          </div>
-        </header>
+            <div className="text-xs uppercase tracking-[0.3em] text-zinc-500">Memory List</div>
+            <div className="space-y-3 overflow-y-auto pr-1">
+              {memories.map((memory) => {
+                const cover = memory.items[0];
+                const active = memory.id === activeMemoryId;
+                const createdAt = cover?.createdAt ? new Date(cover.createdAt).toLocaleDateString() : "未知时间";
+                return (
+                  <button
+                    key={memory.id}
+                    onClick={() => setMemory(memory.id)}
+                    className={`flex w-full flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left text-xs text-zinc-800 shadow-sm transition hover:-translate-y-0.5 hover:shadow ${
+                      active ? "ring-2 ring-blue-200" : ""
+                    }`}
+                  >
+                    <div className="relative h-28 w-full overflow-hidden bg-zinc-100">
+                      {cover ? <SupportScene item={cover} /> : <div className="h-full w-full bg-zinc-100" />}
+                      <span className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-white">
+                        {memory.items.length} 片段
+                      </span>
+                    </div>
+                    <div className="w-full space-y-1 px-3 py-2">
+                      <div className="truncate text-sm font-semibold text-zinc-900">{memory.title}</div>
+                      <div className="text-[11px] text-zinc-500">{createdAt}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        )}
 
         <div
           ref={containerRef}
-          className={`relative flex flex-1 flex-col gap-2 ${isFullscreen ? "min-h-screen" : "px-2"}`}
-          style={isFullscreen ? undefined : { minHeight: "calc(100vh - 110px)" }}
+          className={`relative flex flex-1 flex-col gap-2 ${isFullscreen ? "min-h-screen" : "px-2 pb-4"}`}
+          style={isFullscreen ? undefined : { minHeight: "calc(100vh - 32px)" }}
+          onMouseEnter={showControls}
+          onMouseLeave={hideControls}
         >
           <div
-            className={`relative flex w-full cursor-pointer select-none flex-col justify-center overflow-hidden ${
-              isFullscreen ? "min-h-screen" : "h-full"
-            }`}
-            onClick={togglePlay}
-            style={isFullscreen ? undefined : { minHeight: "calc(100vh - 140px)" }}
-          >
+          className={`relative flex w-full cursor-pointer select-none flex-col justify-center overflow-hidden ${
+            isFullscreen ? "min-h-screen" : "h-full"
+          }`}
+          onClick={togglePlay}
+          style={isFullscreen ? undefined : { minHeight: "calc(100vh - 140px)" }}
+        >
             {scene && (
               <>
                 <div className="absolute inset-0">
@@ -283,12 +326,82 @@ function MemoryWall() {
               </>
             )}
 
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/30 via-black/10 to-black/30" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/15 via-white/5 to-white/20" />
 
-            <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white/80">
+            <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-zinc-700 shadow">
               {isPlaying ? "播放中" : "已暂停"} · {activeMemory?.title ?? ""}
             </div>
           </div>
+
+          {scene && totalScenes > 0 && (
+            <div
+            className={`pointer-events-auto absolute inset-x-0 bottom-0 z-20 transition ${
+              controlsVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+            }`}
+              style={{ padding: "0 16px 48px", bottom: "12px" }}
+            >
+              <div className="mx-auto flex max-w-6xl items-center gap-3 rounded-3xl bg-white/90 px-4 py-3 shadow-2xl backdrop-blur-lg ring-1 ring-zinc-200">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => nextMemory(-1)}
+                    className="h-11 w-11 rounded-full bg-zinc-200 text-lg font-bold text-zinc-800 shadow-sm transition hover:bg-zinc-300"
+                    aria-label="上一记忆"
+                  >
+                    ⏮
+                  </button>
+                  <button
+                    onClick={togglePlay}
+                    className="h-11 w-11 rounded-full bg-zinc-900 text-lg font-semibold text-white shadow-md transition hover:bg-zinc-800"
+                    aria-label={isPlaying ? "暂停" : "播放"}
+                  >
+                    {isPlaying ? "⏸" : "▶️"}
+                  </button>
+                  <button
+                    onClick={() => nextMemory(1)}
+                    className="h-11 w-11 rounded-full bg-zinc-200 text-lg font-bold text-zinc-800 shadow-sm transition hover:bg-zinc-300"
+                    aria-label="下一记忆"
+                  >
+                    ⏭
+                  </button>
+                  <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700 shadow-sm">
+                    {sceneIndex + 1} / {totalScenes}
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-x-auto" ref={thumbBarRef}>
+                  <div className="ml-auto flex gap-2 pb-1 justify-end">
+                    {activeMemory?.items.map((thumb, idx) => {
+                      const active = idx === sceneIndex;
+                      return (
+                        <button
+                          key={thumb.id}
+                          data-active={active ? "true" : "false"}
+                          onClick={() => {
+                            setSceneIndex(idx);
+                            setIsPlaying(true);
+                          }}
+                          className={`relative flex h-12 w-16 flex-shrink-0 overflow-hidden rounded-lg border shadow-sm transition ${
+                            active ? "border-blue-300 ring-2 ring-blue-200" : "border-zinc-200 hover:border-blue-200"
+                          }`}
+                        >
+                          {thumb.type === "video" ? (
+                            <video muted playsInline className="h-full w-full object-cover">
+                              <source src={thumb.url} />
+                            </video>
+                          ) : (
+                            <img src={thumb.url} alt={thumb.id} className="h-full w-full object-cover" />
+                          )}
+                          <span className="absolute left-1 top-1 rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-semibold text-white">
+                            {idx + 1}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {isFullscreen && (
             <button
@@ -300,44 +413,6 @@ function MemoryWall() {
           )}
         </div>
 
-        {!isFullscreen && (
-          <section className="flex flex-col gap-2 px-2 pb-3">
-            <div className="text-sm uppercase tracking-[0.3em] text-white/50">记忆列表</div>
-            <div
-              className="grid gap-3"
-              style={{
-                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 260px))",
-                justifyContent: "flex-start",
-              }}
-            >
-              {memories.map((memory) => {
-                const cover = memory.items[0];
-                const active = memory.id === activeMemoryId;
-                return (
-                  <button
-                    key={memory.id}
-                    onClick={() => setMemory(memory.id)}
-                    className={`flex h-full flex-col items-start gap-2 rounded-lg bg-white/5 p-2 text-left transition hover:bg-white/10 ${
-                      active ? "ring-2 ring-blue-400/70" : ""
-                    }`}
-                  >
-                    <div className="relative w-full overflow-hidden rounded-lg bg-black/40" style={{ aspectRatio: "16 / 9" }}>
-                      {cover ? <SupportScene item={cover} /> : <div className="h-full w-full" />}
-                      <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-black/50" />
-                    </div>
-                    <div className="flex w-full items-center justify-between">
-                      <div>
-                        <div className="text-sm font-semibold text-white">{memory.title}</div>
-                        <div className="text-xs text-white/60">{memory.items.length} 片段</div>
-                      </div>
-                      <span className="text-lg">{active ? "●" : "○"}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
       </div>
     </LayoutShell>
   );
