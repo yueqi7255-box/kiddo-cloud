@@ -134,7 +134,7 @@ export default function ChildDetailPage({ params }: { params: Promise<{ id: stri
           const transformed =
             bucket.getPublicUrl(
               mediaRow.storage_path,
-              mediaRow.media_type === "live" ? { transform: { format: "webp", quality: 90 } } : undefined
+              mediaRow.media_type === "live" ? ({ transform: { format: "webp", quality: 90 } } as any) : undefined
             ).data.publicUrl ?? bucket.getPublicUrl(mediaRow.storage_path).data.publicUrl;
           if (!transformed) return null;
           const liveUrl =

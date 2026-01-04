@@ -99,7 +99,10 @@ function MemoryWall() {
       const toMediaItem = (row: any): MediaItem | null => {
         const bucket = client.storage.from("photos");
         const transformed =
-          bucket.getPublicUrl(row.storage_path, row.media_type === "live" ? { transform: { format: "webp", quality: 90 } } : undefined)
+          bucket.getPublicUrl(
+            row.storage_path,
+            row.media_type === "live" ? ({ transform: { format: "webp", quality: 90 } } as any) : undefined
+          )
             .data.publicUrl ?? bucket.getPublicUrl(row.storage_path).data.publicUrl;
         if (!transformed) return null;
         const liveUrl =

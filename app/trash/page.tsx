@@ -50,8 +50,10 @@ export default function TrashPage() {
       data?.map((p: any) => {
         const bucket = client.storage.from("photos");
         const transformed =
-          bucket.getPublicUrl(p.storage_path, p.media_type === "live" ? { transform: { format: "webp", quality: 90 } } : undefined)
-            .data.publicUrl ?? bucket.getPublicUrl(p.storage_path).data.publicUrl;
+          bucket.getPublicUrl(
+            p.storage_path,
+            p.media_type === "live" ? ({ transform: { format: "webp", quality: 90 } } as any) : undefined
+          ).data.publicUrl ?? bucket.getPublicUrl(p.storage_path).data.publicUrl;
         const liveUrl =
           p.media_type === "live" && p.live_video_path ? bucket.getPublicUrl(p.live_video_path).data.publicUrl : null;
         return {

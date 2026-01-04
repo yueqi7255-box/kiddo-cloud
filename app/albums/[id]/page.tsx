@@ -106,7 +106,7 @@ export default function AlbumDetail({
             const publicUrl =
               bucket.getPublicUrl(
                 row.storage_path,
-                row.media_type === "live" ? { transform: { format: "webp", quality: 90 } } : undefined
+                row.media_type === "live" ? ({ transform: { format: "webp", quality: 90 } } as any) : undefined
               ).data.publicUrl ?? bucket.getPublicUrl(row.storage_path).data.publicUrl;
             if (!publicUrl) return null;
             const liveUrl =

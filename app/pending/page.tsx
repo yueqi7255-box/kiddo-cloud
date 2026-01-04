@@ -54,7 +54,7 @@ export default function PendingPage() {
           const bucket = client.storage.from("photos");
           const transformed = bucket.getPublicUrl(
             p.storage_path,
-            p.media_type === "live" ? { transform: { format: "webp", quality: 90 } } : undefined
+            p.media_type === "live" ? ({ transform: { format: "webp", quality: 90 } } as any) : undefined
           ).data.publicUrl;
           const fallback = bucket.getPublicUrl(p.storage_path).data.publicUrl;
           const liveUrl =
