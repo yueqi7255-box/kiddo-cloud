@@ -288,13 +288,13 @@ export default function UploadPage() {
         bucket.getPublicUrl(
           path,
           mediaType === "image"
-            ? {
+            ? ({
                 transform: {
                   format: "webp",
                   quality: 90,
                   width: 1200,
                 },
-              }
+              } as any)
             : undefined
         ).data.publicUrl ?? bucket.getPublicUrl(path).data.publicUrl;
       const { data: inserted, error: insertErr } = await supabaseClient
@@ -507,7 +507,7 @@ export default function UploadPage() {
                     稍后确认
                   </button>
                   <button
-                    onClick={confirmNow}
+                    onClick={() => confirmNow()}
                     className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
                     disabled={!selectedChildId || files.length === 0}
                   >

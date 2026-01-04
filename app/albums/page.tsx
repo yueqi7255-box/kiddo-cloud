@@ -398,7 +398,9 @@ export default function AlbumsPage() {
                         <div
                           className="relative h-40 w-full overflow-hidden rounded-2xl bg-gradient-to-br from-blue-200 to-purple-100 text-xl font-semibold text-zinc-800 ring-1 ring-zinc-100"
                           data-child-id={child.id}
-                          ref={(el) => el && coverObserver.current?.observe(el)}
+                          ref={(el) => {
+                            if (el) coverObserver.current?.observe(el);
+                          }}
                         >
                           {child.coverUrl && visibleCoverIds.has(child.id) ? (
                             <img
@@ -477,23 +479,23 @@ export default function AlbumsPage() {
                 />
               ) : (
                 <Link
-                  key={album.id}
-                  href={{ pathname: `/albums/${album.id}`, query: { title: album.name, type: album.type, albumId: album.id } }}
+                  key={(album as Album).id}
+                  href={{ pathname: `/albums/${(album as Album).id}`, query: { title: (album as Album).name, type: (album as Album).type, albumId: (album as Album).id } }}
                   className="group relative overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-zinc-300"
                 >
                   <div className="h-28 w-full overflow-hidden">
-                    <img src={album.cover} alt={album.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
+                    <img src={(album as Album).cover} alt={(album as Album).name} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
                   </div>
                   <div className="space-y-1 px-3 py-2">
                     <div className="flex items-center justify-between">
-                      <h2 className="text-sm font-semibold text-zinc-900">{album.name}</h2>
+                      <h2 className="text-sm font-semibold text-zinc-900">{(album as Album).name}</h2>
                       <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-700">
-                        {album.type === "smart" ? "智能" : "普通"}
+                        {(album as Album).type === "smart" ? "智能" : "普通"}
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-600">{album.description}</p>
+                    <p className="text-xs text-zinc-600">{(album as Album).description}</p>
                     <p className="text-xs font-medium text-zinc-800">
-                      {album.count !== undefined ? `${album.count} 条` : countsLoading ? "加载中..." : "0 条"} · 点击进入
+                      {(album as Album).count !== undefined ? `${(album as Album).count} 条` : countsLoading ? "加载中..." : "0 条"} · 点击进入
                     </p>
                   </div>
                 </Link>
